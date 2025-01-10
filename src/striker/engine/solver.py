@@ -100,6 +100,7 @@ class PhysicsSolver:
 
     @ti.func
     def _func_apply_velocity(self):
+        ti.loop_config(serialize=True)
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 self.entities_state[env_idx, i].pos += self.entities_state[
