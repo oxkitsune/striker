@@ -92,16 +92,19 @@ class PhysicsSolver:
             self.entities_init_AABB[i, 3] = ti.Vector([max_x, max_y], dt=ti.f32)
 
     def step(self):
-        self._kernel_apply_velocity()
+        self._kernel_step()
 
     @ti.kernel
-    def _kernel_apply_velocity(self):
+    def _kernel_step(self):
+        self._func_apply_velocity()
+
+    @ti.func
+    def _func_apply_velocity(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
-                for j in ti.static(range(2)):
-                    self.entities_state[env_idx, i].pos[j] += self.entities_state[
-                        env_idx, i
-                    ].vel[j]
+                self.entities_state[env_idx, i].pos += self.entities_state[
+                    env_idx, i
+                ].vel
 
     def _batch_shape(self, shape=None, first_dim=False, B=None):
         if B is None:
