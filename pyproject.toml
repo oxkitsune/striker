@@ -1,0 +1,21 @@
+[project]
+name = "striker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Gijs de Jong", email = "berichtaangijs@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "taichi>=1.7.3",
+    "torch>=2.5.1",
+    "tqdm>=4.67.1",
+]
+
+[project.scripts]
+striker = "striker:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
