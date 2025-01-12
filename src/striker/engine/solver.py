@@ -15,9 +15,6 @@ class PhysicsSolver:
 
         if self.n_entities > 0:
             self._init_entities()
-            print(self.entities_state)
-            print(self.entities_info.shape)
-            print(self.entities_state.shape)
 
     def _init_entities(self):
         struct_entity_info = ti.types.struct(
@@ -103,7 +100,6 @@ class PhysicsSolver:
 
     @ti.func
     def _func_apply_velocity(self):
-        ti.loop_config(serialize=True)
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 self.entities_state[i, env_idx].pos += self.entities_state[
