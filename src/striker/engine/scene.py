@@ -8,13 +8,17 @@ from .entity import Entity
 
 
 class Scene:
-    def __init__(self, show_viewer: bool = False):
+    def __init__(
+        self,
+        show_viewer: bool = False,
+        viewport_size: tuple[float, float] = (10.4, 7.4),
+    ):
         self.show_viewer = show_viewer
         self._entities = []
         self.solver = PhysicsSolver(self)
 
         if show_viewer:
-            self.visualizer = Visualizer(self)
+            self.visualizer = Visualizer(self, viewport_size=viewport_size)
 
     def add_entity(self, init_pos, init_yaw, init_vel, radius: float) -> Entity:
         self._entities.append(

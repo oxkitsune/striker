@@ -1,3 +1,5 @@
+import striker as sr
+
 import numpy as np
 import taichi as ti
 
@@ -20,18 +22,18 @@ class PhysicsSolver:
 
     def _init_entities(self):
         struct_entity_info = ti.types.struct(
-            pos=ti.types.vector(2, ti.f32),
-            yaw=ti.f32,
-            vel=ti.types.vector(2, ti.f32),
-            radius=ti.f32,
+            pos=ti.types.vector(2, sr.ti_float),
+            yaw=sr.ti_float,
+            vel=ti.types.vector(2, sr.ti_float),
+            radius=sr.ti_float,
         )
 
         struct_entity_state = ti.types.struct(
-            pos=ti.types.vector(2, ti.f32),
-            yaw=ti.f32,
-            vel=ti.types.vector(2, ti.f32),
-            aabb_min=ti.types.vector(2, ti.f32),
-            aabb_max=ti.types.vector(2, ti.f32),
+            pos=ti.types.vector(2, sr.ti_float),
+            yaw=sr.ti_float,
+            vel=ti.types.vector(2, sr.ti_float),
+            aabb_min=ti.types.vector(2, sr.ti_float),
+            aabb_max=ti.types.vector(2, sr.ti_float),
         )
 
         self.entities_info = struct_entity_info.field(
@@ -39,7 +41,7 @@ class PhysicsSolver:
         )
 
         self.entities_init_AABB = ti.Vector.field(
-            2, dtype=ti.f32, shape=(self.n_entities, 4)
+            2, dtype=sr.ti_float, shape=(self.n_entities, 4)
         )
 
         self.entities_state = struct_entity_state.field(
@@ -90,10 +92,10 @@ class PhysicsSolver:
             max_x = entities_pos[i, 0] + entities_radius[i]
             max_y = entities_pos[i, 1] + entities_radius[i]
 
-            self.entities_init_AABB[i, 0] = ti.Vector([min_x, min_y], dt=ti.f32)
-            self.entities_init_AABB[i, 1] = ti.Vector([max_x, min_y], dt=ti.f32)
-            self.entities_init_AABB[i, 2] = ti.Vector([min_x, max_y], dt=ti.f32)
-            self.entities_init_AABB[i, 3] = ti.Vector([max_x, max_y], dt=ti.f32)
+            self.entities_init_AABB[i, 0] = ti.Vector([min_x, min_y], dt=sr.ti_float)
+            self.entities_init_AABB[i, 1] = ti.Vector([max_x, min_y], dt=sr.ti_float)
+            self.entities_init_AABB[i, 2] = ti.Vector([min_x, max_y], dt=sr.ti_float)
+            self.entities_init_AABB[i, 3] = ti.Vector([max_x, max_y], dt=sr.ti_float)
 
     @ti.kernel
     def _kernel_init_entities_state(self):
@@ -127,42 +129,72 @@ class PhysicsSolver:
 
     @ti.kernel
     def _kernel_step(self):
-        self._func_update_aabbs()
         self._func_broad_phase_collisions()
         self._func_narrow_phase_collisions()
         self._func_update_velocity()
         self._func_apply_velocity()
+        self._func_update_aabbs()
 
     @ti.func
     def _func_apply_velocity(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
-                self.entities_state[i, env_idx].pos += self.entities_state[
-                    i,
-                    env_idx,
-                ].vel
+                absolute_delta = ti.Vector([0.0, 0.0])
+                entity_yaw = self.entities_state[i, env_idx].yaw
+                entity_vel = self.entities_state[i, env_idx].vel
 
-                if (
-                    self.entities_state[i, env_idx].pos[0]
-                    < self.entities_info[i].radius
-                ):
-                    self.entities_state[i, env_idx].vel[0] = 0.01 * ti.random()
-                if (
-                    self.entities_state[i, env_idx].pos[0]
-                    > 1 - self.entities_info[i].radius
-                ):
-                    self.entities_state[i, env_idx].vel[0] = -0.01 * ti.random()
+                # rotate velocity vector by yaw
+                absolute_delta[0] = entity_vel[0] * ti.cos(entity_yaw) - entity_vel[
+                    1
+                ] * ti.sin(entity_yaw)
+                absolute_delta[1] = entity_vel[0] * ti.sin(entity_yaw) + entity_vel[
+                    1
+                ] * ti.cos(entity_yaw)
 
-                if (
-                    self.entities_state[i, env_idx].pos[1]
-                    < self.entities_info[i].radius
-                ):
-                    self.entities_state[i, env_idx].vel[1] = 0.01 * ti.random()
-                if (
-                    self.entities_state[i, env_idx].pos[1]
-                    > 1 - self.entities_info[i].radius
-                ):
-                    self.entities_state[i, env_idx].vel[1] = -0.01 * ti.random()
+                # new position = old position + velocity
+                radius = self.entities_info[i].radius
+                new_pos = self.entities_state[i, env_idx].pos + absolute_delta
+                collided_with_boundary = False
+                normal = ti.Vector([0.0, 0.0])
+
+                # Check for collisions and calculate the normal
+                if new_pos[0] + radius >= 150:  # Right boundary
+                    normal = ti.Vector([-1.0, 0.0])  # Normal points left
+                    new_pos[0] = 150 - radius
+                    collided_with_boundary = True
+
+                if new_pos[0] - radius <= -150:  # Left boundary
+                    normal = ti.Vector([1.0, 0.0])  # Normal points right
+                    new_pos[0] = -150 + radius
+                    collided_with_boundary = True
+
+                if new_pos[1] + radius >= 150:  # Top boundary
+                    normal = ti.Vector([0.0, -1.0])  # Normal points down
+                    new_pos[1] = 150 - radius
+                    collided_with_boundary = True
+
+                if new_pos[1] - radius <= -150:  # Bottom boundary
+                    normal = ti.Vector([0.0, 1.0])  # Normal points up
+                    new_pos[1] = -150 + radius
+                    collided_with_boundary = True
+
+                # Reflect velocity if a collision occurred
+                if collided_with_boundary:
+                    global_vel = ti.Vector(
+                        [
+                            entity_vel[0] * ti.cos(entity_yaw)
+                            - entity_vel[1] * ti.sin(entity_yaw),
+                            entity_vel[0] * ti.sin(entity_yaw)
+                            + entity_vel[1] * ti.cos(entity_yaw),
+                        ]
+                    )
+                    reflected_vel = global_vel - 2 * (global_vel.dot(normal)) * normal
+
+                    # Update yaw based on the reflected velocity
+                    entity_yaw = ti.atan2(reflected_vel[1], reflected_vel[0])
+
+                self.entities_state[i, env_idx].pos = new_pos
+                self.entities_state[i, env_idx].yaw = entity_yaw
 
     @ti.func
     def _func_update_aabbs(self):
@@ -177,8 +209,8 @@ class PhysicsSolver:
 
                 # Compute bounds
                 min_x = pos_x - r
-                max_x = pos_x + r
                 min_y = pos_y - r
+                max_x = pos_x + r
                 max_y = pos_y + r
 
                 # Update the AABB in entities_state
@@ -258,7 +290,7 @@ class PhysicsSolver:
             for i in range(self.n_entities):
                 for j in range(self.n_entities):
                     if self.narrow_phase_collisions[i, j, env_idx] > 0:
-                        self.entities_state[i, env_idx].vel *= -1
+                        self.entities_state[i, env_idx].yaw == np.pi
 
     def _batch_shape(self, shape=None, first_dim=False, B=None):
         if B is None:
