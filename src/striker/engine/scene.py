@@ -20,16 +20,20 @@ class Scene:
         if show_viewer:
             self.visualizer = Visualizer(self, viewport_size=viewport_size)
 
-    def add_entity(self, init_pos, init_yaw, init_vel, radius: float) -> Entity:
-        self._entities.append(
-            Entity(
-                self,
-                init_pos=init_pos,
-                init_yaw=init_yaw,
-                init_vel=init_vel,
-                radius=radius,
-            )
+    def add_entity(
+        self, init_pos, init_yaw, init_vel, radius: float, mass: float = 1
+    ) -> Entity:
+        entity = Entity(
+            self,
+            init_pos=init_pos,
+            init_yaw=init_yaw,
+            init_vel=init_vel,
+            radius=radius,
+            mass=mass,
         )
+
+        self._entities.append(entity)
+        return entity
 
     def build(self, n_envs: int = 0):
         self._parallelize(n_envs)
