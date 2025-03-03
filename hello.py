@@ -26,4 +26,11 @@ scene.build(n_envs=2)
 for i in tqdm(range(100_000_000)):
     scene.step()
 
-    print("robot:", robot.get_pos(), "obstacle:", obstacle.get_yaw())
+    print(
+        "robot pos:",
+        robot.get_pos()[0],
+        "robot vel:",
+        robot.get_vel()[0],
+        "obstacle:",
+        obstacle.get_yaw(),
+    )

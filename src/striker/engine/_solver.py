@@ -353,12 +353,7 @@ class PhysicsSolver:
                             self.entities_state[env_idx, j].pos += correction / m_j
 
     def get_entities_pos(self, entities_idx, envs_idx=None):
-        envs_idx = self._get_envs_idx(envs_idx)
-        entities_idx = torch.as_tensor(
-            entities_idx, dtype=torch.int32, device=sr.device
-        )
-        tensor = torch.empty(self._batch_shape((len(entities_idx), 2), first_dim=True))
-
+        tensor, entities_idx, envs_idx = self._prep_2d_array(entities_idx, 2, envs_idx)
         self._kernel_get_entities_pos(tensor, entities_idx, envs_idx)
 
         if self.num_envs == 0:
@@ -380,11 +375,7 @@ class PhysicsSolver:
                 ].pos[i]
 
     def get_entities_yaw(self, entities_idx, envs_idx=None):
-        envs_idx = self._get_envs_idx(envs_idx)
-        entities_idx = torch.as_tensor(
-            entities_idx, dtype=torch.int32, device=sr.device
-        )
-        tensor = torch.empty(self._batch_shape((len(entities_idx),), first_dim=True))
+        tensor, entities_idx, envs_idx = self._prep_1d_array(entities_idx, envs_idx)
 
         self._kernel_get_entities_yaw(tensor, entities_idx, envs_idx)
 
@@ -405,6 +396,48 @@ class PhysicsSolver:
                 tensor[b_idx, e_idx] = self.entities_state[
                     envs_idx[b_idx], entities_idx[e_idx]
                 ].yaw
+
+    def get_entities_vel(self, entities_idx, envs_idx=None):
+        tensor, entities_idx, envs_idx = self._prep_2d_array(entities_idx, 2, envs_idx)
+        self._kernel_get_entities_vel(tensor, entities_idx, envs_idx)
+
+        if self.num_envs == 0:
+            tensor = tensor.squeeze(0)
+
+        return tensor
+
+    @ti.kernel
+    def _kernel_get_entities_vel(
+        self,
+        tensor: ti.types.ndarray(),
+        entities_idx: ti.types.ndarray(),
+        envs_idx: ti.types.ndarray(),
+    ):
+        for e_idx, b_idx in ti.ndrange(entities_idx.shape[0], envs_idx.shape[0]):
+            for i in ti.static(range(2)):
+                tensor[b_idx, e_idx, i] = self.entities_state[
+                    envs_idx[b_idx], entities_idx[e_idx]
+                ].vel[i]
+
+    def _prep_1d_array(self, entities_idx, dim: int, envs_idx=None):
+        envs_idx = self._get_envs_idx(envs_idx)
+        entities_idx = torch.as_tensor(
+            entities_idx, dtype=torch.int32, device=sr.device
+        )
+        tensor = torch.empty(self._batch_shape((len(entities_idx),), first_dim=True))
+
+        return tensor, envs_idx, entities_idx
+
+    def _prep_2d_array(self, entities_idx, dim: int, envs_idx=None):
+        envs_idx = self._get_envs_idx(envs_idx)
+        entities_idx = torch.as_tensor(
+            entities_idx, dtype=torch.int32, device=sr.device
+        )
+        tensor = torch.empty(
+            self._batch_shape((len(entities_idx), dim), first_dim=True)
+        )
+
+        return tensor, envs_idx, entities_idx
 
     def _get_envs_idx(self, envs_idx=None):
         if envs_idx is None:

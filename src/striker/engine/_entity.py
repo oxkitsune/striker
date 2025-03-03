@@ -32,3 +32,6 @@ class Entity:
 
     def get_yaw(self, envs_idx=None):
         return self._solver.get_entities_yaw([self.idx], envs_idx).squeeze(-2)
+
+    def get_vel(self, envs_idx=None):
+        return self._solver.get_entities_vel([self.idx], envs_idx).squeeze(-2)
