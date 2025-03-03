@@ -1,5 +1,6 @@
 import striker as sr
 import numpy as np
+import torch
 import taichi as ti
 
 
@@ -7,17 +8,32 @@ import taichi as ti
 class PhysicsSolver:
     def __init__(self, scene):
         self.scene = scene
+        self._entities = []
 
     def build(self):
         self.num_envs = self.scene.n_envs
+        self._envs_idx = self.scene._envs_idx
         self._B = max(1, self.num_envs)
         self.n_entities = len(self.scene._entities)
         if self.n_entities > 0:
             self._init_entities()
-            self._init_broad_phase()
-            self._init_narrow_phase()
+            self.broad_phase_collisions = ti.field(
+                dtype=ti.i32,
+                shape=self._batch_shape(
+                    (self.n_entities, self.n_entities), first_dim=True
+                ),
+            )
+
+            self.narrow_phase_collisions = ti.field(
+                dtype=ti.i32,
+                shape=self._batch_shape(
+                    (self.n_entities, self.n_entities), first_dim=True
+                ),
+            )
             self.impulse_accum = ti.Vector.field(
-                2, dtype=sr.ti_float, shape=self._batch_shape(self.n_entities)
+                2,
+                dtype=sr.ti_float,
+                shape=self._batch_shape(self.n_entities, first_dim=True),
             )
 
     def _init_entities(self):
@@ -43,10 +59,11 @@ class PhysicsSolver:
             2, dtype=sr.ti_float, shape=(self.n_entities, 4)
         )
         self.entities_state = struct_entity_state.field(
-            shape=self._batch_shape(self.n_entities),
+            shape=self._batch_shape(self.n_entities, first_dim=True),
             needs_grad=False,
             layout=ti.Layout.SOA,
         )
+
         if self.n_entities > 0:
             self._kernel_init_entities(
                 entities_pos=np.array(
@@ -105,24 +122,9 @@ class PhysicsSolver:
     def _kernel_init_entities_state(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
-                for j in ti.static(range(2)):
-                    self.entities_state[i, env_idx].pos[j] = self.entities_info[i].pos[
-                        j
-                    ]
-                    self.entities_state[i, env_idx].vel[j] = self.entities_info[i].vel[
-                        j
-                    ]
-                self.entities_state[i, env_idx].yaw = self.entities_info[i].yaw
-
-    def _init_broad_phase(self):
-        self.broad_phase_collisions = ti.field(
-            dtype=ti.i32, shape=self._batch_shape((self.n_entities, self.n_entities))
-        )
-
-    def _init_narrow_phase(self):
-        self.narrow_phase_collisions = ti.field(
-            dtype=ti.i32, shape=self._batch_shape((self.n_entities, self.n_entities))
-        )
+                self.entities_state[env_idx, i].pos = self.entities_info[i].pos
+                self.entities_state[env_idx, i].vel = self.entities_info[i].vel
+                self.entities_state[env_idx, i].yaw = self.entities_info[i].yaw
 
     def step(self):
         self._kernel_step()
@@ -141,8 +143,8 @@ class PhysicsSolver:
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 absolute_delta = ti.Vector([0.0, 0.0])
-                entity_yaw = self.entities_state[i, env_idx].yaw
-                entity_vel = self.entities_state[i, env_idx].vel
+                entity_yaw = self.entities_state[env_idx, i].yaw
+                entity_vel = self.entities_state[env_idx, i].vel
                 absolute_delta[0] = entity_vel[0] * ti.cos(entity_yaw) - entity_vel[
                     1
                 ] * ti.sin(entity_yaw)
@@ -150,7 +152,7 @@ class PhysicsSolver:
                     1
                 ] * ti.cos(entity_yaw)
                 radius = self.entities_info[i].radius
-                new_pos = self.entities_state[i, env_idx].pos + absolute_delta
+                new_pos = self.entities_state[env_idx, i].pos + absolute_delta
                 collided_with_boundary = False
                 normal = ti.Vector([0.0, 0.0])
                 if new_pos[0] + radius >= 150:
@@ -180,36 +182,36 @@ class PhysicsSolver:
                     )
                     reflected_vel = global_vel - 2 * (global_vel.dot(normal)) * normal
                     entity_yaw = ti.atan2(reflected_vel[1], reflected_vel[0])
-                self.entities_state[i, env_idx].pos = new_pos
-                self.entities_state[i, env_idx].yaw = entity_yaw
+                self.entities_state[env_idx, i].pos = new_pos
+                self.entities_state[env_idx, i].yaw = entity_yaw
 
     @ti.func
     def _func_update_aabbs(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
-                pos_x = self.entities_state[i, env_idx].pos[0]
-                pos_y = self.entities_state[i, env_idx].pos[1]
+                pos_x = self.entities_state[env_idx, i].pos[0]
+                pos_y = self.entities_state[env_idx, i].pos[1]
                 r = self.entities_info[i].radius
                 min_x = pos_x - r
                 min_y = pos_y - r
                 max_x = pos_x + r
                 max_y = pos_y + r
-                self.entities_state[i, env_idx].aabb_min = ti.Vector([min_x, min_y])
-                self.entities_state[i, env_idx].aabb_max = ti.Vector([max_x, max_y])
+                self.entities_state[env_idx, i].aabb_min = ti.Vector([min_x, min_y])
+                self.entities_state[env_idx, i].aabb_max = ti.Vector([max_x, max_y])
 
     @ti.func
     def _func_broad_phase_collisions(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(self.n_entities):
-                    self.broad_phase_collisions[i, j, env_idx] = 0
+                    self.broad_phase_collisions[env_idx, i, j] = 0
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(i + 1, self.n_entities):
-                    min_i = self.entities_state[i, env_idx].aabb_min
-                    max_i = self.entities_state[i, env_idx].aabb_max
-                    min_j = self.entities_state[j, env_idx].aabb_min
-                    max_j = self.entities_state[j, env_idx].aabb_max
+                    min_i = self.entities_state[env_idx, i].aabb_min
+                    max_i = self.entities_state[env_idx, i].aabb_max
+                    min_j = self.entities_state[env_idx, j].aabb_min
+                    max_j = self.entities_state[env_idx, j].aabb_max
                     overlap = (
                         (max_i[0] >= min_j[0])
                         and (min_i[0] <= max_j[0])
@@ -217,66 +219,67 @@ class PhysicsSolver:
                         and (min_i[1] <= max_j[1])
                     )
                     if overlap:
-                        self.broad_phase_collisions[i, j, env_idx] = 1
-                        self.broad_phase_collisions[j, i, env_idx] = 1
+                        self.broad_phase_collisions[env_idx, i, j] = 1
+                        self.broad_phase_collisions[env_idx, j, i] = 1
 
     @ti.func
     def _func_narrow_phase_collisions(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(self.n_entities):
-                    self.narrow_phase_collisions[i, j, env_idx] = 0
+                    self.narrow_phase_collisions[env_idx, i, j] = 0
+
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(i + 1, self.n_entities):
-                    if self.broad_phase_collisions[i, j, env_idx] == 1:
-                        pos_i = self.entities_state[i, env_idx].pos
-                        pos_j = self.entities_state[j, env_idx].pos
+                    if self.broad_phase_collisions[env_idx, i, j] == 1:
+                        pos_i = self.entities_state[env_idx, i].pos
+                        pos_j = self.entities_state[env_idx, j].pos
                         r_i = self.entities_info[i].radius
                         r_j = self.entities_info[j].radius
                         delta = pos_i - pos_j
                         dist_sqr = delta.dot(delta)
                         r_sum = r_i + r_j
                         if dist_sqr < r_sum * r_sum:
-                            self.narrow_phase_collisions[i, j, env_idx] = 1
-                            self.narrow_phase_collisions[j, i, env_idx] = 1
+                            self.narrow_phase_collisions[env_idx, i, j] = 1
+                            self.narrow_phase_collisions[env_idx, j, i] = 1
 
     @ti.func
     def _func_update_velocity(self):
         for env_idx in range(self._B):
             for i in range(self.n_entities):
-                self.impulse_accum[i, env_idx] = ti.Vector([0.0, 0.0])
+                self.impulse_accum[env_idx, i] = ti.Vector([0.0, 0.0])
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(i + 1, self.n_entities):
-                    if self.narrow_phase_collisions[i, j, env_idx] > 0:
-                        pos_i = self.entities_state[i, env_idx].pos
-                        pos_j = self.entities_state[j, env_idx].pos
+                    if self.narrow_phase_collisions[env_idx, i, j] > 0:
+                        pos_i = self.entities_state[env_idx, i].pos
+                        pos_j = self.entities_state[env_idx, j].pos
                         n = pos_j - pos_i
                         d = n.norm()
                         n_normal = n / d if d > 1e-6 else ti.Vector([1.0, 0.0])
                         v_i = ti.Vector(
                             [
-                                self.entities_state[i, env_idx].vel[0]
-                                * ti.cos(self.entities_state[i, env_idx].yaw)
-                                - self.entities_state[i, env_idx].vel[1]
-                                * ti.sin(self.entities_state[i, env_idx].yaw),
-                                self.entities_state[i, env_idx].vel[0]
-                                * ti.sin(self.entities_state[i, env_idx].yaw)
-                                + self.entities_state[i, env_idx].vel[1]
-                                * ti.cos(self.entities_state[i, env_idx].yaw),
+                                self.entities_state[env_idx, i].vel[0]
+                                * ti.cos(self.entities_state[env_idx, i].yaw)
+                                - self.entities_state[env_idx, i].vel[1]
+                                * ti.sin(self.entities_state[env_idx, i].yaw),
+                                self.entities_state[env_idx, i].vel[0]
+                                * ti.sin(self.entities_state[env_idx, i].yaw)
+                                + self.entities_state[env_idx, i].vel[1]
+                                * ti.cos(self.entities_state[env_idx, i].yaw),
                             ]
                         )
                         v_j = ti.Vector(
                             [
-                                self.entities_state[j, env_idx].vel[0]
-                                * ti.cos(self.entities_state[j, env_idx].yaw)
-                                - self.entities_state[j, env_idx].vel[1]
-                                * ti.sin(self.entities_state[j, env_idx].yaw),
-                                self.entities_state[j, env_idx].vel[0]
-                                * ti.sin(self.entities_state[j, env_idx].yaw)
-                                + self.entities_state[j, env_idx].vel[1]
-                                * ti.cos(self.entities_state[j, env_idx].yaw),
+                                self.entities_state[env_idx, j].vel[0]
+                                * ti.cos(self.entities_state[env_idx, j].yaw)
+                                - self.entities_state[env_idx, j].vel[1]
+                                * ti.sin(self.entities_state[env_idx, j].yaw),
+                                self.entities_state[env_idx, j].vel[0]
+                                * ti.sin(self.entities_state[env_idx, j].yaw)
+                                + self.entities_state[env_idx, j].vel[1]
+                                * ti.cos(self.entities_state[env_idx, j].yaw),
                             ]
                         )
                         relative_velocity = v_i - v_j
@@ -294,27 +297,28 @@ class PhysicsSolver:
                             / (1 / m_i + 1 / m_j)
                         )
                         impulse = impulse_magnitude * n_normal
-                        self.impulse_accum[i, env_idx] += impulse / m_i
-                        self.impulse_accum[j, env_idx] -= impulse / m_j
+                        self.impulse_accum[env_idx, i] += impulse / m_i
+                        self.impulse_accum[env_idx, j] -= impulse / m_j
+
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 v = ti.Vector(
                     [
-                        self.entities_state[i, env_idx].vel[0]
-                        * ti.cos(self.entities_state[i, env_idx].yaw)
-                        - self.entities_state[i, env_idx].vel[1]
-                        * ti.sin(self.entities_state[i, env_idx].yaw),
-                        self.entities_state[i, env_idx].vel[0]
-                        * ti.sin(self.entities_state[i, env_idx].yaw)
-                        + self.entities_state[i, env_idx].vel[1]
-                        * ti.cos(self.entities_state[i, env_idx].yaw),
+                        self.entities_state[env_idx, i].vel[0]
+                        * ti.cos(self.entities_state[env_idx, i].yaw)
+                        - self.entities_state[env_idx, i].vel[1]
+                        * ti.sin(self.entities_state[env_idx, i].yaw),
+                        self.entities_state[env_idx, i].vel[0]
+                        * ti.sin(self.entities_state[env_idx, i].yaw)
+                        + self.entities_state[env_idx, i].vel[1]
+                        * ti.cos(self.entities_state[env_idx, i].yaw),
                     ]
                 )
-                v_new = v + self.impulse_accum[i, env_idx]
+                v_new = v + self.impulse_accum[env_idx, i]
                 new_speed = v_new.norm()
                 new_yaw = ti.atan2(v_new[1], v_new[0])
-                self.entities_state[i, env_idx].yaw = new_yaw
-                self.entities_state[i, env_idx].vel = ti.Vector([new_speed, 0.0])
+                self.entities_state[env_idx, i].yaw = new_yaw
+                self.entities_state[env_idx, i].vel = ti.Vector([new_speed, 0.0])
 
     @ti.func
     def _func_correct_penetration(self):
@@ -325,9 +329,9 @@ class PhysicsSolver:
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(i + 1, self.n_entities):
-                    if self.narrow_phase_collisions[i, j, env_idx] > 0:
-                        pos_i = self.entities_state[i, env_idx].pos
-                        pos_j = self.entities_state[j, env_idx].pos
+                    if self.narrow_phase_collisions[env_idx, i, j] > 0:
+                        pos_i = self.entities_state[env_idx, i].pos
+                        pos_j = self.entities_state[env_idx, j].pos
                         r_i = self.entities_info[i].radius
                         r_j = self.entities_info[j].radius
                         n = pos_j - pos_i
@@ -345,8 +349,83 @@ class PhysicsSolver:
                                 / inv_mass_sum
                                 * n_normal
                             )
-                            self.entities_state[i, env_idx].pos -= correction / m_i
-                            self.entities_state[j, env_idx].pos += correction / m_j
+                            self.entities_state[env_idx, i].pos -= correction / m_i
+                            self.entities_state[env_idx, j].pos += correction / m_j
+
+    def get_entities_pos(self, entities_idx, envs_idx=None):
+        envs_idx = self._get_envs_idx(envs_idx)
+        entities_idx = torch.as_tensor(
+            entities_idx, dtype=torch.int32, device=sr.device
+        )
+        tensor = torch.empty(self._batch_shape((len(entities_idx), 2), first_dim=True))
+
+        self._kernel_get_entities_pos(tensor, entities_idx, envs_idx)
+
+        if self.num_envs == 0:
+            tensor = tensor.squeeze(0)
+
+        return tensor
+
+    @ti.kernel
+    def _kernel_get_entities_pos(
+        self,
+        tensor: ti.types.ndarray(),
+        entities_idx: ti.types.ndarray(),
+        envs_idx: ti.types.ndarray(),
+    ):
+        for e_idx, b_idx in ti.ndrange(entities_idx.shape[0], envs_idx.shape[0]):
+            for i in ti.static(range(2)):
+                tensor[b_idx, e_idx, i] = self.entities_state[
+                    envs_idx[b_idx], entities_idx[e_idx]
+                ].pos[i]
+
+    def get_entities_yaw(self, entities_idx, envs_idx=None):
+        envs_idx = self._get_envs_idx(envs_idx)
+        entities_idx = torch.as_tensor(
+            entities_idx, dtype=torch.int32, device=sr.device
+        )
+        tensor = torch.empty(self._batch_shape((len(entities_idx),), first_dim=True))
+
+        self._kernel_get_entities_yaw(tensor, entities_idx, envs_idx)
+
+        if self.num_envs == 0:
+            tensor = tensor.squeeze(0)
+
+        return tensor
+
+    @ti.kernel
+    def _kernel_get_entities_yaw(
+        self,
+        tensor: ti.types.ndarray(),
+        entities_idx: ti.types.ndarray(),
+        envs_idx: ti.types.ndarray(),
+    ):
+        for e_idx, b_idx in ti.ndrange(entities_idx.shape[0], envs_idx.shape[0]):
+            for i in ti.static(range(2)):
+                tensor[b_idx, e_idx] = self.entities_state[
+                    envs_idx[b_idx], entities_idx[e_idx]
+                ].yaw
+
+    def _get_envs_idx(self, envs_idx=None):
+        if envs_idx is None:
+            envs_idx = self._envs_idx
+        else:
+            if self.num_envs == 0:
+                raise ValueError(
+                    "`envs_idx` is not supported for non-parallized scenes!"
+                )
+
+            envs_idx = torch.as_tensor(
+                envs_idx, dtype=torch.int32, device=sr.device
+            ).contiguous()
+
+            if envs_idx.ndim != 1:
+                raise ValueError("Expected a 1D tensor for `envs_idx`!")
+
+            if (envs_idx < 0).any() or (envs_idx >= self.num_envs).any():
+                raise ValueError("`envs_idx` exceeds valid range.")
+
+        return envs_idx
 
     def _batch_shape(self, shape=None, first_dim=False, B=None):
         if B is None:

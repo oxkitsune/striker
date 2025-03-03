@@ -11,19 +11,17 @@ class Visualizer:
     def build(self):
         self._window = ti.ui.Window(name="Striker", res=(640, 640), vsync=True)
         self.render_pos = ti.Vector.field(
-            2, dtype=sr.ti_float, shape=self.scene.solver.n_entities
+            2, dtype=sr.ti_float, shape=self.scene.n_entities
         )
-        self.render_radii = ti.field(
-            dtype=sr.ti_float, shape=self.scene.solver.n_entities
-        )
+        self.render_radii = ti.field(dtype=sr.ti_float, shape=self.scene.n_entities)
         self.render_colors = ti.Vector.field(
-            3, dtype=sr.ti_float, shape=self.scene.solver.n_entities
+            3, dtype=sr.ti_float, shape=self.scene.n_entities
         )
         self.render_aabb_vertices = ti.Vector.field(
-            2, dtype=sr.ti_float, shape=self.scene.solver.n_entities * 8
+            2, dtype=sr.ti_float, shape=self.scene.n_entities * 8
         )
         self.render_yaw_overlay = ti.Vector.field(
-            2, dtype=sr.ti_float, shape=self.scene.solver.n_entities * 2
+            2, dtype=sr.ti_float, shape=self.scene.n_entities * 2
         )
         self._kernel_setup_colors()
 
@@ -36,23 +34,23 @@ class Visualizer:
 
     @ti.kernel
     def _kernel_setup_colors(self):
-        for i in range(self.scene.solver.n_entities):
+        for i in range(self.scene.n_entities):
             self.render_colors[i] = ti.Vector([ti.random(), ti.random(), ti.random()])
 
     @ti.kernel
     def _kernel_prepare_render(self):
-        for i in range(self.scene.solver.n_entities):
+        for i in range(self.scene.n_entities):
             self.render_pos[i] = self._func_world_to_screen(
-                self.scene.solver.entities_state[i, 0].pos
+                self.scene._solver.entities_state[0, i].pos
             )
-            self.render_radii[i] = self.scene.solver.entities_info[i].radius / min(
+            self.render_radii[i] = self.scene._solver.entities_info[i].radius / min(
                 self.viewport_size[0], self.viewport_size[1]
             )
             aabb_min = self._func_world_to_screen(
-                self.scene.solver.entities_state[i, 0].aabb_min
+                self.scene._solver.entities_state[0, i].aabb_min
             )
             aabb_max = self._func_world_to_screen(
-                self.scene.solver.entities_state[i, 0].aabb_max
+                self.scene._solver.entities_state[0, i].aabb_max
             )
 
             self.render_aabb_vertices[i * 8 + 0] = aabb_min
@@ -66,19 +64,19 @@ class Visualizer:
 
             self.render_yaw_overlay[i * 2 + 0] = self.render_pos[i]
 
-            radius = self.scene.solver.entities_info[i].radius
+            radius = self.scene._solver.entities_info[i].radius
             self.render_yaw_overlay[i * 2 + 1] = self._func_world_to_screen(
-                self.scene.solver.entities_state[i, 0].pos
+                self.scene._solver.entities_state[0, i].pos
                 + ti.Vector(
                     [
-                        radius * ti.cos(self.scene.solver.entities_state[i, 0].yaw),
-                        radius * ti.sin(self.scene.solver.entities_state[i, 0].yaw),
+                        radius * ti.cos(self.scene._solver.entities_state[0, i].yaw),
+                        radius * ti.sin(self.scene._solver.entities_state[0, i].yaw),
                     ]
                 )
             )
 
-            for j in range(self.scene.solver.n_entities):
-                if self.scene.solver.narrow_phase_collisions[i, j, 0] > 0:
+            for j in range(self.scene.n_entities):
+                if self.scene._solver.narrow_phase_collisions[i, j, 0] > 0:
                     self.render_colors[i] = ti.Vector([1, 0, 0])
                 else:
                     self.render_colors[i] = ti.Vector([0, 1, 0])
