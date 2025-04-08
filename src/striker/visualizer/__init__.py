@@ -1,32 +1,27 @@
-import striker as sr
 import taichi as ti
+
+import striker as sr
 
 
 @ti.data_oriented
 class Visualizer:
+    """Simple visualizer example for striker scenes."""
+
     def __init__(self, scene, viewport_size: tuple[float, float]):
         self.scene = scene
         self.viewport_size = viewport_size
 
     def build(self):
         self._window = ti.ui.Window(name="Striker", res=(640, 640), vsync=True)
-        self.render_pos = ti.Vector.field(
-            2, dtype=sr.ti_float, shape=self.scene.n_entities
-        )
+        self.render_pos = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities)
         self.render_radii = ti.field(dtype=sr.ti_float, shape=self.scene.n_entities)
-        self.render_colors = ti.Vector.field(
-            3, dtype=sr.ti_float, shape=self.scene.n_entities
-        )
-        self.render_aabb_vertices = ti.Vector.field(
-            2, dtype=sr.ti_float, shape=self.scene.n_entities * 8
-        )
-        self.render_yaw_overlay = ti.Vector.field(
-            2, dtype=sr.ti_float, shape=self.scene.n_entities * 2
-        )
+        self.render_colors = ti.Vector.field(3, dtype=sr.ti_float, shape=self.scene.n_entities)
+        self.render_aabb_vertices = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities * 8)
+        self.render_yaw_overlay = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities * 2)
         self._kernel_setup_colors()
 
     @ti.func
-    def _func_world_to_screen(self, position: ti.math.vec2) -> ti.math.vec2:  # type: ignore
+    def _func_world_to_screen(self, position: ti.math.vec2) -> ti.math.vec2:
         return (
             (position[0] + self.viewport_size[0] / 2) / self.viewport_size[0],
             (position[1] + self.viewport_size[1] / 2) / self.viewport_size[1],
@@ -40,18 +35,12 @@ class Visualizer:
     @ti.kernel
     def _kernel_prepare_render(self):
         for i in range(self.scene.n_entities):
-            self.render_pos[i] = self._func_world_to_screen(
-                self.scene._solver.entities_state[0, i].pos
-            )
+            self.render_pos[i] = self._func_world_to_screen(self.scene._solver.entities_state[0, i].pos)
             self.render_radii[i] = self.scene._solver.entities_info[i].radius / min(
                 self.viewport_size[0], self.viewport_size[1]
             )
-            aabb_min = self._func_world_to_screen(
-                self.scene._solver.entities_state[0, i].aabb_min
-            )
-            aabb_max = self._func_world_to_screen(
-                self.scene._solver.entities_state[0, i].aabb_max
-            )
+            aabb_min = self._func_world_to_screen(self.scene._solver.entities_state[0, i].aabb_min)
+            aabb_max = self._func_world_to_screen(self.scene._solver.entities_state[0, i].aabb_max)
 
             self.render_aabb_vertices[i * 8 + 0] = aabb_min
             self.render_aabb_vertices[i * 8 + 1] = ti.Vector([aabb_max[0], aabb_min[1]])
@@ -67,12 +56,10 @@ class Visualizer:
             radius = self.scene._solver.entities_info[i].radius
             self.render_yaw_overlay[i * 2 + 1] = self._func_world_to_screen(
                 self.scene._solver.entities_state[0, i].pos
-                + ti.Vector(
-                    [
-                        radius * ti.cos(self.scene._solver.entities_state[0, i].yaw),
-                        radius * ti.sin(self.scene._solver.entities_state[0, i].yaw),
-                    ]
-                )
+                + ti.Vector([
+                    radius * ti.cos(self.scene._solver.entities_state[0, i].yaw),
+                    radius * ti.sin(self.scene._solver.entities_state[0, i].yaw),
+                ])
             )
 
             for j in range(self.scene.n_entities):

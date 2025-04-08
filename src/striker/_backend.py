@@ -1,7 +1,8 @@
-import platform
 import os
+import platform
 import subprocess
 from enum import IntEnum
+
 import taichi as ti
 
 

@@ -1,4 +1,5 @@
 import taichi as ti
+import torch
 
 from striker.engine._solver import PhysicsSolver
 
@@ -28,10 +29,22 @@ class Entity:
         self.restitution = restitution
 
     def get_pos(self, envs_idx=None):
-        return self._solver.get_entities_pos([self.idx], envs_idx).squeeze(-2)
+        return self._solver.get_entities_pos([self.idx], envs_idx)
+
+    def set_pos(self, pos, zero_velocity=False, envs_idx=None):
+        self._solver.set_entities_pos([self.idx], pos, envs_idx)
+
+        if zero_velocity:
+            self._solver.set_entities_vel([self.idx], torch.zeros_like(pos), envs_idx)
 
     def get_yaw(self, envs_idx=None):
-        return self._solver.get_entities_yaw([self.idx], envs_idx).squeeze(-2)
+        return self._solver.get_entities_yaw([self.idx], envs_idx)
+
+    def set_yaw(self, yaw, envs_idx=None):
+        self._solver.set_entities_yaw([self.idx], yaw, envs_idx)
 
     def get_vel(self, envs_idx=None):
-        return self._solver.get_entities_vel([self.idx], envs_idx).squeeze(-2)
+        return self._solver.get_entities_vel([self.idx], envs_idx)
+
+    def set_vel(self, vel, envs_idx=None):
+        self._solver.set_entities_vel([self.idx], vel, envs_idx)

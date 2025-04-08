@@ -1,9 +1,9 @@
 import torch
 
-from ..visualizer import Visualizer
+from striker.visualizer import Visualizer
 
-from ._solver import PhysicsSolver
 from ._entity import Entity
+from ._solver import PhysicsSolver
 
 
 class Scene:

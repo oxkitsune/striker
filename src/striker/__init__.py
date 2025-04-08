@@ -1,9 +1,12 @@
 from typing import Literal
+
+import psutil
 import taichi as ti
 import torch
 
+from . import visualizer
 from ._backend import _get_cpu_name, backend as sr_backend
-from .engine.scene import Scene
+from .engine._scene import Scene
 
 _initialized = False
 device = None
@@ -62,9 +65,8 @@ def _setup_device(backend: sr_backend):
         # will default to cpu device if the provided backend is unknown
         device = torch.device("cpu")
         device_name = _get_cpu_name()
-        # TODO(gijsd): figure out better way to obtain total amount of memory
-        # total_mem = psutil.virtual_memory().total / 1024**3
-        total_mem = 0
+
+        total_mem = psutil.virtual_memory().total / 1024**3
 
     return device, total_mem, device_name
 
