@@ -29,6 +29,7 @@ class Scene:
         radius: float,
         mass: float = 1,
         restitution: float = 0.9,
+        color: tuple[float, float, float] | None = None,
     ) -> Entity:
         entity = Entity(
             scene=self,
@@ -40,6 +41,7 @@ class Scene:
             radius=radius,
             mass=mass,
             restitution=restitution,
+            color=color,
         )
 
         self._entities.append(entity)

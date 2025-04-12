@@ -14,6 +14,8 @@ class Visualizer:
         window_title: str = "Striker",
         window_resolution: tuple[int, int] = (640, 640),
         vsync: bool = True,
+        draw_aabb: bool = False,
+        highlight_collisions: bool = True,
     ):
         """
         # Simple visualizer utility for Striker scenes.
@@ -24,6 +26,9 @@ class Visualizer:
             window_title (str, optional): Window title. Defaults to "Striker".
             window_resolution (tuple[int, int], optional): The default resolution of the window. Defaults to (640, 640).
             vsync (bool, optional): whether to enable vsync or not. Defaults to True.
+            draw_aabb(bool, optional): whether to draw aabbs or not. Defaults to False.
+            highlight_collisions (bool, optional): whether to highlight entities in collision. Defaults to True.
+
 
         """
         self.scene = scene
@@ -31,14 +36,18 @@ class Visualizer:
         self.window_title = window_title
         self.window_resolution = window_resolution
         self.vsync = vsync
+        self.draw_aabb = draw_aabb
+        self.highlight_collisions = highlight_collisions
 
     def build(self):
         self._window = ti.ui.Window(name=self.window_title, res=self.window_resolution, vsync=self.vsync)
         self.render_pos = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities)
         self.render_radii = ti.field(dtype=sr.ti_float, shape=self.scene.n_entities)
         self.render_colors = ti.Vector.field(3, dtype=sr.ti_float, shape=self.scene.n_entities)
-        self.render_aabb_vertices = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities * 8)
+
         self.render_yaw_overlay = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities * 2)
+        self.render_aabb_vertices = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities * 8)
+
         self._kernel_setup_colors()
 
     @ti.func
@@ -52,6 +61,12 @@ class Visualizer:
     def _kernel_setup_colors(self):
         for i in range(self.scene.n_entities):
             self.render_colors[i] = ti.Vector([ti.random(), ti.random(), ti.random()])
+
+    def _update_entity_colors(self):
+        for i in range(self.scene.n_entities):
+            entity = self.scene._entities[i]
+            if hasattr(entity, "color") and entity.color is not None:
+                self.render_colors[i] = ti.Vector([entity.color[0], entity.color[1], entity.color[2]])
 
     @ti.kernel
     def _kernel_prepare_render(self):
@@ -83,17 +98,17 @@ class Visualizer:
                 ])
             )
 
-            for j in range(self.scene.n_entities):
-                if self.scene._solver.narrow_phase_collisions[i, j, 0] > 0:
-                    self.render_colors[i] = ti.Vector([1, 0, 0])
-                else:
-                    self.render_colors[i] = ti.Vector([0, 1, 0])
+            if self.highlight_collisions:
+                for j in range(self.scene.n_entities):
+                    if self.scene._solver.narrow_phase_collisions[i, j, 0] > 0:
+                        self.render_colors[i] = ti.Vector([1, 1, 1]) - self.render_colors[i]
 
     def render(self):
         color = (0.0705882353, 0.6274509804, 0)
         canvas = self._window.get_canvas()
         canvas.set_background_color(color)
 
+        self._update_entity_colors()
         self._kernel_prepare_render()
         canvas.circles(
             centers=self.render_pos,
@@ -102,10 +117,12 @@ class Visualizer:
             radius=0.5,
         )
         canvas.lines(vertices=self.render_yaw_overlay, color=(0, 0, 0), width=0.001)
-        canvas.lines(
-            vertices=self.render_aabb_vertices,
-            color=(1, 1, 1),
-            width=0.001,
-        )
+
+        if self.draw_aabb:
+            canvas.lines(
+                vertices=self.render_aabb_vertices,
+                color=(1, 1, 1),
+                width=0.001,
+            )
 
         self._window.show()

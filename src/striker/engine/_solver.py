@@ -281,10 +281,10 @@ class PhysicsSolver:
 
     @ti.func
     def _func_correct_penetration(self):
-        correction_factor = 1
+        correction_factor = 1.5
 
         # avoid jitter
-        slop = 0.01
+        slop = 0.001
         for env_idx in range(self._B):
             for i in range(self.n_entities):
                 for j in range(i + 1, self.n_entities):
@@ -296,6 +296,7 @@ class PhysicsSolver:
                         n = pos_j - pos_i
                         d = n.norm()
                         penetration = (r_i + r_j) - d
+
                         if penetration > slop:
                             # Normalize the collision normal, or use a default if too small.
                             n_normal = n / d if d > 1e-6 else ti.Vector([1.0, 0.0])
@@ -303,8 +304,9 @@ class PhysicsSolver:
                             m_j = self.entities_info[j].mass
                             inv_mass_sum = 1 / m_i + 1 / m_j
                             correction = correction_factor * (penetration - slop) / inv_mass_sum * n_normal
-                            self.entities_state[env_idx, i].pos -= correction / m_i
-                            self.entities_state[env_idx, j].pos += correction / m_j
+
+                            self.entities_state[env_idx, i].pos -= correction / m_i * 1.1
+                            self.entities_state[env_idx, j].pos += correction / m_j * 1.1
 
     def get_entities_pos(self, entities_idx, envs_idx=None):
         tensor, entities_idx, envs_idx = self._sanitize_2D_io_variables(

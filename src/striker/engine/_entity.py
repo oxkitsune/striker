@@ -17,6 +17,7 @@ class Entity:
         radius: float,
         mass: float = 1.0,
         restitution: float = 0.9,
+        color: tuple[float, float, float] | None = None,
     ):
         self.scene = scene
         self._solver = solver
@@ -27,6 +28,7 @@ class Entity:
         self.radius = radius
         self.mass = mass
         self.restitution = restitution
+        self.color = color
 
     def get_pos(self, envs_idx=None):
         return self._solver.get_entities_pos([self.idx], envs_idx)
@@ -48,3 +50,9 @@ class Entity:
 
     def set_vel(self, vel, envs_idx=None):
         self._solver.set_entities_vel([self.idx], vel, envs_idx)
+
+    def get_color(self):
+        return self.color
+
+    def set_color(self, color: tuple[float, float, float]):
+        self.color = color
