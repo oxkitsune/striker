@@ -7,12 +7,33 @@ import striker as sr
 class Visualizer:
     """Simple visualizer example for striker scenes."""
 
-    def __init__(self, scene, viewport_size: tuple[float, float]):
+    def __init__(
+        self,
+        scene,
+        viewport_size: tuple[float, float],
+        window_title: str = "Striker",
+        window_resolution: tuple[int, int] = (640, 640),
+        vsync: bool = True,
+    ):
+        """
+        # Simple visualizer utility for Striker scenes.
+
+        Args:
+            scene (sr.Scene): The scene to visualize.
+            viewport_size (tuple[float, float]): The size of the viewport. Used for scaling the rendering.
+            window_title (str, optional): Window title. Defaults to "Striker".
+            window_resolution (tuple[int, int], optional): The default resolution of the window. Defaults to (640, 640).
+            vsync (bool, optional): whether to enable vsync or not. Defaults to True.
+
+        """
         self.scene = scene
         self.viewport_size = viewport_size
+        self.window_title = window_title
+        self.window_resolution = window_resolution
+        self.vsync = vsync
 
     def build(self):
-        self._window = ti.ui.Window(name="Striker", res=(640, 640), vsync=True)
+        self._window = ti.ui.Window(name=self.window_title, res=self.window_resolution, vsync=self.vsync)
         self.render_pos = ti.Vector.field(2, dtype=sr.ti_float, shape=self.scene.n_entities)
         self.render_radii = ti.field(dtype=sr.ti_float, shape=self.scene.n_entities)
         self.render_colors = ti.Vector.field(3, dtype=sr.ti_float, shape=self.scene.n_entities)
