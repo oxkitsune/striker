@@ -136,33 +136,7 @@ class PhysicsSolver:
                 entity_vel = self.entities_state[env_idx, i].vel
                 absolute_delta[0] = entity_vel[0] * ti.cos(entity_yaw) - entity_vel[1] * ti.sin(entity_yaw)
                 absolute_delta[1] = entity_vel[0] * ti.sin(entity_yaw) + entity_vel[1] * ti.cos(entity_yaw)
-                radius = self.entities_info[i].radius
                 new_pos = self.entities_state[env_idx, i].pos + absolute_delta
-                collided_with_boundary = False
-                normal = ti.Vector([0.0, 0.0])
-                if new_pos[0] + radius >= 150:
-                    normal = ti.Vector([-1.0, 0.0])
-                    new_pos[0] = 150 - radius
-                    collided_with_boundary = True
-                if new_pos[0] - radius <= -150:
-                    normal = ti.Vector([1.0, 0.0])
-                    new_pos[0] = -150 + radius
-                    collided_with_boundary = True
-                if new_pos[1] + radius >= 150:
-                    normal = ti.Vector([0.0, -1.0])
-                    new_pos[1] = 150 - radius
-                    collided_with_boundary = True
-                if new_pos[1] - radius <= -150:
-                    normal = ti.Vector([0.0, 1.0])
-                    new_pos[1] = -150 + radius
-                    collided_with_boundary = True
-                if collided_with_boundary:
-                    global_vel = ti.Vector([
-                        entity_vel[0] * ti.cos(entity_yaw) - entity_vel[1] * ti.sin(entity_yaw),
-                        entity_vel[0] * ti.sin(entity_yaw) + entity_vel[1] * ti.cos(entity_yaw),
-                    ])
-                    reflected_vel = global_vel - 2 * (global_vel.dot(normal)) * normal
-                    entity_yaw = ti.atan2(reflected_vel[1], reflected_vel[0])
                 self.entities_state[env_idx, i].pos = new_pos
                 self.entities_state[env_idx, i].yaw = entity_yaw
 
@@ -275,8 +249,6 @@ class PhysicsSolver:
                 ])
                 v_new = v + self.impulse_accum[env_idx, i]
                 new_speed = v_new.norm()
-                new_yaw = ti.atan2(v_new[1], v_new[0])
-                self.entities_state[env_idx, i].yaw = new_yaw
                 self.entities_state[env_idx, i].vel = ti.Vector([new_speed, 0.0])
 
     @ti.func
